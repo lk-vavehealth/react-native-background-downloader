@@ -109,10 +109,10 @@ let task = download({
   metadata: {}
 }).begin(({ expectedBytes, headers }) => {
   console.log(`Going to download ${expectedBytes} bytes!`)
-}).progress(({ bytesDownloaded, bytesTotal }) => {
-  console.log(`Downloaded: ${bytesDownloaded / bytesTotal * 100}%`)
-}).done(({ bytesDownloaded, bytesTotal }) => {
-  console.log('Download is done!', { bytesDownloaded, bytesTotal })
+}).progress(({ bytes, bytesTotal }) => {
+  console.log(`Downloaded: ${bytes / bytesTotal * 100}%`)
+}).done(({ bytes, bytesTotal }) => {
+  console.log('Download is done!', { bytes, bytesTotal })
 
   // PROCESS YOUR STUFF
 
@@ -146,10 +146,10 @@ import RNBackgroundDownloader from '@kesha-antonov/react-native-background-downl
 let lostTasks = await RNBackgroundDownloader.checkForExistingDownloads()
 for (let task of lostTasks) {
   console.log(`Task ${task.id} was found!`)
-  task.progress(({ bytesDownloaded, bytesTotal }) => {
-    console.log(`Downloaded: ${bytesDownloaded / bytesTotal * 100}%`)
-  }).done(({ bytesDownloaded, bytesTotal }) => {
-    console.log('Download is done!', { bytesDownloaded, bytesTotal })
+  task.progress(({ bytes, bytesTotal }) => {
+    console.log(`Downloaded: ${bytes / bytesTotal * 100}%`)
+  }).done(({ bytes, bytesTotal }) => {
+    console.log('Download is done!', { bytes, bytesTotal })
   }).error(({ error, errorCode }) => {
     console.log('Download canceled due to error: ', { error, errorCode })
   })
@@ -182,10 +182,10 @@ let task = RNBackgroundDownloader.download({
   }
 }).begin(({ expectedBytes, headers }) => {
   console.log(`Going to download ${expectedBytes} bytes!`)
-}).progress(({ bytesDownloaded, bytesTotal }) => {
-  console.log(`Downloaded: ${bytesDownloaded / bytesTotal * 100}%`)
-}).done(({ bytesDownloaded, bytesTotal }) => {
-  console.log('Download is done!', { bytesDownloaded, bytesTotal })
+}).progress(({ bytes, bytesTotal }) => {
+  console.log(`Downloaded: ${bytes / bytesTotal * 100}%`)
+}).done(({ bytes, bytesTotal }) => {
+  console.log('Download is done!', { bytes, bytesTotal })
 }).error(({ error, errorCode }) => {
   console.log('Download canceled due to error: ', { error, errorCode })
 })
@@ -218,7 +218,7 @@ An object containing options properties
 
 **returns**
 
-`DownloadTask` - The download task to control and monitor this download
+`SessionTask` - The download task to control and monitor this download
 
 ### `checkForExistingDownloads()`
 
@@ -228,7 +228,7 @@ Recommended to run at the init stage of the app.
 
 **returns**
 
-`DownloadTask[]` - Array of tasks that were running in the background so you can re-attach callbacks to them
+`SessionTask[]` - Array of tasks that were running in the background so you can re-attach callbacks to them
 
 ### `setConfig({})`
 
@@ -238,16 +238,16 @@ Recommended to run at the init stage of the app.
 | `progressInterval` | Number | Interval in which download progress sent from downloader. Number should be >= 250. It's in ms |
 | `isLogsEnabled`   | Boolean | Enables/disables logs in library |
 
-### DownloadTask
+### SessionTask
 
-A class representing a download task created by `RNBackgroundDownloader.download`
+A class representing a download or upload task created by `RNBackgroundDownloader.download`
 
 ### `Members`
 | Name           | Type   | Info                                                                                                 |
 | -------------- | ------ | ---------------------------------------------------------------------------------------------------- |
 | `id`           | String | The id you gave the task when calling `RNBackgroundDownloader.download`                              |
 | `metadata`     | Object | The metadata you gave the task when calling `RNBackgroundDownloader.download`                        |
-| `bytesDownloaded` | Number | The number of bytes currently written by the task                                                    |
+| `bytes`        | Number | The number of bytes currently written by the task                                                    |
 | `bytesTotal`   | Number | The number bytes expected to be written by this task or more plainly, the file size being downloaded |
 
 ### `completeHandler(jobId)`
@@ -305,13 +305,13 @@ const appStateChangeListener = AppState.addEventListener('change', handleAppStat
 ### `Callback Methods`
 Use these methods to stay updated on what's happening with the task.
 
-All callback methods return the current instance of the `DownloadTask` for chaining.
+All callback methods return the current instance of the `SessionTask` for chaining.
 
 | Function   | Callback Arguments                | Info|
 | ---------- | --------------------------------- | ---- |
 | `begin`    | { expectedBytes, headers } | Called when the first byte is received. 💡: this is good place to check if the device has enough storage space for this download |
-| `progress` | { bytesDownloaded, bytesTotal } | Called at max every 1.5s so you can update your progress bar accordingly |
-| `done`     | { bytesDownloaded, bytesTotal } | Called when the download is done, the file is at the destination you've set |
+| `progress` | { bytes, bytesTotal } | Called at max every 1.5s so you can update your progress bar accordingly |
+| `done`     | { bytes, bytesTotal } | Called when the download is done, the file is at the destination you've set |
 | `error`    | { error, errorCode } | Called when the download stops due to an error |
 
 ### `pause()`  (iOS only)

@@ -1,7 +1,7 @@
 import { NativeModules, NativeEventEmitter } from 'react-native'
-import DownloadTask from './DownloadTask'
+import SessionTask from './SessionTask'
 import NativeRNBackgroundDownloader from './NativeRNBackgroundDownloader'
-import { DownloadOptions } from './index.d'
+import { DownloadOptions, UploadOptions } from './index.d'
 
 const { RNBackgroundDownloader } = NativeModules
 const RNBackgroundDownloaderEmitter = new NativeEventEmitter(RNBackgroundDownloader)
@@ -26,12 +26,28 @@ RNBackgroundDownloaderEmitter.addListener('downloadBegin', ({ id, ...rest }) => 
   task?.onBegin(rest)
 })
 
+RNBackgroundDownloaderEmitter.addListener('uploadBegin', ({ id, ...rest }) => {
+  log('[RNBackgroundDownloader] uploadBegin', id, rest)
+  const task = tasksMap.get(id)
+  task?.onBegin(rest)
+})
+
 RNBackgroundDownloaderEmitter.addListener('downloadProgress', events => {
   log('[RNBackgroundDownloader] downloadProgress-1', events, tasksMap)
   for (const event of events) {
     const { id, ...rest } = event
     const task = tasksMap.get(id)
     log('[RNBackgroundDownloader] downloadProgress-2', id, task)
+    task?.onProgress(rest)
+  }
+})
+
+RNBackgroundDownloaderEmitter.addListener('uploadProgress', events => {
+  log('[RNBackgroundDownloader] uploadProgress-1', events, tasksMap)
+  for (const event of events) {
+    const { id, ...rest } = event
+    const task = tasksMap.get(id)
+    log('[RNBackgroundDownloader] uploadProgress-2', id, task)
     task?.onProgress(rest)
   }
 })
@@ -44,8 +60,24 @@ RNBackgroundDownloaderEmitter.addListener('downloadComplete', ({ id, ...rest }) 
   tasksMap.delete(id)
 })
 
+RNBackgroundDownloaderEmitter.addListener('uploadComplete', ({ id, ...rest }) => {
+  log('[RNBackgroundDownloader] uploadComplete', id, rest)
+  const task = tasksMap.get(id)
+  task?.onDone(rest)
+
+  tasksMap.delete(id)
+})
+
 RNBackgroundDownloaderEmitter.addListener('downloadFailed', ({ id, ...rest }) => {
   log('[RNBackgroundDownloader] downloadFailed', id, rest)
+  const task = tasksMap.get(id)
+  task?.onError(rest)
+
+  tasksMap.delete(id)
+})
+
+RNBackgroundDownloaderEmitter.addListener('uploadFailed', ({ id, ...rest }) => {
+  log('[RNBackgroundDownloader] uploadFailed', id, rest)
   const task = tasksMap.get(id)
   task?.onError(rest)
 
@@ -71,18 +103,18 @@ export async function checkForExistingDownloads () {
 
   return foundTasks.map(taskInfo => {
     // SECOND ARGUMENT RE-ASSIGNS EVENT HANDLERS
-    const task = new DownloadTask(taskInfo, tasksMap.get(taskInfo.id))
+    const task = new SessionTask(taskInfo, tasksMap.get(taskInfo.id))
     log('[RNBackgroundDownloader] checkForExistingDownloads-3', taskInfo)
 
     if (taskInfo.state === RNBackgroundDownloader.TaskRunning) {
-      task.state = 'DOWNLOADING'
+      task.state = 'PROCESSING'
     } else if (taskInfo.state === RNBackgroundDownloader.TaskSuspended) {
       task.state = 'PAUSED'
     } else if (taskInfo.state === RNBackgroundDownloader.TaskCanceling) {
       task.stop()
       return null
     } else if (taskInfo.state === RNBackgroundDownloader.TaskCompleted) {
-      if (taskInfo.bytesDownloaded === taskInfo.bytesTotal)
+      if (taskInfo.bytes === taskInfo.bytesTotal)
         task.state = 'DONE'
       else
         // IOS completed the download but it was not done.
@@ -97,7 +129,7 @@ export async function ensureDownloadsAreRunning () {
   log('[RNBackgroundDownloader] ensureDownloadsAreRunning')
   const tasks = await checkForExistingDownloads()
   for (const task of tasks)
-    if (task.state === 'DOWNLOADING') {
+    if (task.state === 'PROCESSING') {
       task.pause()
       task.resume()
     }
@@ -128,13 +160,46 @@ export function download (options: DownloadOptions) {
   if (options.isAllowedOverMetered == null) options.isAllowedOverMetered = true
   if (options.isNotificationVisible == null) options.isNotificationVisible = false
 
-  const task = new DownloadTask({
+  const task = new SessionTask({
     id: options.id,
+    type: 0, // Download
     metadata: options.metadata,
   })
   tasksMap.set(options.id, task)
 
   NativeRNBackgroundDownloader.download({
+    ...options,
+    metadata: JSON.stringify(options.metadata),
+    progressInterval: config.progressInterval,
+  })
+
+  return task
+}
+
+export function upload (options: UploadOptions) {
+  log('[RNBackgroundDownloader] download', options)
+  if (!options.id || !options.url || !options.source)
+    throw new Error('[RNBackgroundDownloader] id, url and destination are required')
+
+  options.headers = { ...config.headers, ...options.headers }
+
+  if (!(options.metadata && typeof options.metadata === 'object'))
+    options.metadata = {}
+
+  options.source = options.source.replace('file://', '')
+
+  if (options.isAllowedOverRoaming == null) options.isAllowedOverRoaming = true
+  if (options.isAllowedOverMetered == null) options.isAllowedOverMetered = true
+  if (options.isNotificationVisible == null) options.isNotificationVisible = false
+
+  const task = new SessionTask({
+    id: options.id,
+    type: 1, // Upload
+    metadata: options.metadata,
+  })
+  tasksMap.set(options.id, task)
+
+  NativeRNBackgroundDownloader.upload({
     ...options,
     metadata: JSON.stringify(options.metadata),
     progressInterval: config.progressInterval,
@@ -149,6 +214,7 @@ export const directories = {
 
 export default {
   download,
+  upload,
   checkForExistingDownloads,
   ensureDownloadsAreRunning,
   completeHandler,

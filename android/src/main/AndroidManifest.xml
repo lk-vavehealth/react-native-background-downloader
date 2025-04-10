@@ -1,6 +1,3 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-          package="com.eko">
-
-  <uses-permission android:name="android.permission.DOWNLOAD_WITHOUT_NOTIFICATION" />
+<manifest package="com.eko">
 
 </manifest>

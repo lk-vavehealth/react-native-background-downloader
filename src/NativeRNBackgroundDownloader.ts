@@ -2,18 +2,19 @@ import { TurboModuleRegistry } from 'react-native'
 import type { TurboModule } from 'react-native'
 // import type { DownloadTask } from './index.d'
 
-type DownloadTask = {
+type SessionTask = {
   id: string
+  type: 0 | 1
   // state: DownloadTaskState
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   metadata: {
     [key: string]: unknown
   }
-  bytesDownloaded: number
+  bytes: number
   bytesTotal: number
   state:
     | 'PENDING'
-    | 'DOWNLOADING'
+    | 'PROCESSING'
     | 'PAUSED'
     | 'DONE'
     | 'FAILED'
@@ -35,7 +36,7 @@ type DownloadTask = {
 }
 
 export interface Spec extends TurboModule {
-  checkForExistingDownloads: () => Promise<DownloadTask[]>
+  checkForExistingDownloads: () => Promise<SessionTask[]>
   completeHandler: (id: string) => void
   download: (options: {
     id: string
@@ -50,7 +51,21 @@ export interface Spec extends TurboModule {
     isAllowedOverMetered?: boolean
     isNotificationVisible?: boolean
     notificationTitle?: string
-  }) => DownloadTask
+  }) => SessionTask
+  upload: (options: {
+    id: string
+    url: string
+    source: string
+    headers?: {
+      [key: string]: unknown
+    }
+    metadata?: string
+    progressInterval?: number
+    isAllowedOverRoaming?: boolean
+    isAllowedOverMetered?: boolean
+    isNotificationVisible?: boolean
+    notificationTitle?: string
+  }) => SessionTask
 }
 
 export default TurboModuleRegistry.getEnforcing<Spec>(

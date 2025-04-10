@@ -7,6 +7,7 @@ import {
   checkForExistingDownloads,
   download,
   setConfig,
+  SessionTask,
 } from '@kesha-antonov/react-native-background-downloader'
 import Slider from '@react-native-community/slider'
 import { ExButton, ExWrapper } from '../../components/commons'
@@ -62,7 +63,7 @@ const BasicExampleScreen = () => {
 
   const [isStarted, setIsStarted] = useState(false)
 
-  const [downloadTasks, setDownloadTasks] = useState([])
+  const [sessionTasks, setSessionTasks] = useState<SessionTask[]>([])
 
   /**
    * It is used to resume your incomplete or unfinished downloads.
@@ -75,7 +76,7 @@ const BasicExampleScreen = () => {
 
       if (tasks.length > 0) {
         tasks.map(task => process(task))
-        setDownloadTasks(downloadTasks => [...downloadTasks, ...tasks])
+        setSessionTasks(sessionTasks => [...sessionTasks, ...tasks])
         setIsStarted(true)
       }
     } catch (e) {
@@ -107,32 +108,32 @@ const BasicExampleScreen = () => {
     return task
       .begin(({ expectedBytes, headers }) => {
         console.log('task: begin', { id: task.id, expectedBytes, headers })
-        setDownloadTasks(downloadTasks => {
-          downloadTasks[index] = task
-          return [...downloadTasks]
+        setSessionTasks(sessionTasks => {
+          sessionTasks[index] = task
+          return [...sessionTasks]
         })
       })
-      .progress(({ bytesDownloaded, bytesTotal }) => {
-        console.log('task: progress', { id: task.id, bytesDownloaded, bytesTotal })
-        setDownloadTasks(downloadTasks => {
-          downloadTasks[index] = task
-          return [...downloadTasks]
+      .progress(({ bytes, bytesTotal }) => {
+        console.log('task: progress', { id: task.id, bytes, bytesTotal })
+        setSessionTasks(sessionTasks => {
+          sessionTasks[index] = task
+          return [...sessionTasks]
         })
       })
       .done(() => {
         console.log('task: done', { id: task.id })
-        setDownloadTasks(downloadTasks => {
-          downloadTasks[index] = task
-          return [...downloadTasks]
+        setSessionTasks(sessionTasks => {
+          sessionTasks[index] = task
+          return [...sessionTasks]
         })
 
         completeHandler(task.id)
       })
       .error(e => {
         console.error('task: error', { id: task.id, e })
-        setDownloadTasks(downloadTasks => {
-          downloadTasks[index] = task
-          return [...downloadTasks]
+        setSessionTasks(sessionTasks => {
+          sessionTasks[index] = task
+          return [...sessionTasks]
         })
 
         completeHandler(task.id)
@@ -141,7 +142,7 @@ const BasicExampleScreen = () => {
 
   const reset = () => {
     stop()
-    setDownloadTasks([])
+    setSessionTasks([])
     setIsStarted(false)
   }
 
@@ -164,17 +165,17 @@ const BasicExampleScreen = () => {
       process(download(taskAttribute))
     )
 
-    setDownloadTasks(downloadTasks => [...downloadTasks, ...tasks])
+    setSessionTasks(sessionTasks => [...sessionTasks, ...tasks])
     setIsStarted(true)
   }
 
   const stop = () => {
-    const tasks = downloadTasks.map(task => {
+    const tasks = sessionTasks.map(task => {
       task.stop()
       return task
     })
 
-    setDownloadTasks(tasks)
+    setSessionTasks(tasks)
     setIsStarted(false)
   }
 
@@ -182,9 +183,9 @@ const BasicExampleScreen = () => {
     const { index, task } = getTask(id)
 
     task.pause()
-    setDownloadTasks(downloadTasks => {
-      downloadTasks[index] = task
-      return [...downloadTasks]
+    setSessionTasks(sessionTasks => {
+      sessionTasks[index] = task
+      return [...sessionTasks]
     })
   }
 
@@ -192,9 +193,9 @@ const BasicExampleScreen = () => {
     const { index, task } = getTask(id)
 
     task.resume()
-    setDownloadTasks(downloadTasks => {
-      downloadTasks[index] = task
-      return [...downloadTasks]
+    setSessionTasks(sessionTasks => {
+      sessionTasks[index] = task
+      return [...sessionTasks]
     })
   }
 
@@ -202,15 +203,15 @@ const BasicExampleScreen = () => {
     const { index, task } = getTask(id)
 
     task.stop()
-    setDownloadTasks(downloadTasks => {
-      downloadTasks[index] = task
-      return [...downloadTasks]
+    setSessionTasks(sessionTasks => {
+      sessionTasks[index] = task
+      return [...sessionTasks]
     })
   }
 
   const getTask = id => {
-    const index = downloadTasks.findIndex(task => task.id === id)
-    const task = downloadTasks[index]
+    const index = sessionTasks.findIndex(task => task.id === id)
+    const task = sessionTasks[index]
     return { index, task }
   }
 
@@ -247,19 +248,20 @@ const BasicExampleScreen = () => {
       </View>
       <FlatList
         style={{ flex: 1, flexGrow: 1 }}
-        data={downloadTasks}
+        data={sessionTasks}
         renderItem={({ item, index }) => {
           const isEnded = ['STOPPED', 'DONE', 'FAILED'].includes(item.state)
-          const isDownloading = item.state === 'DOWNLOADING'
+          const isDownloading = item.state === 'PROCESSING'
+          const processingState = item.type === 0 ? 'DOWNLOADING' : 'UPLOADING'
 
           return (
             <View style={styles.item}>
               <View style={styles.itemContent}>
                 <Text>{item?.id}</Text>
-                <Text>{item?.state}</Text>
+                <Text>{processingState}</Text>
                 <Slider
                   disabled={true}
-                  value={item?.bytesDownloaded}
+                  value={item?.bytes}
                   minimumValue={0}
                   maximumValue={item?.bytesTotal}
                 />

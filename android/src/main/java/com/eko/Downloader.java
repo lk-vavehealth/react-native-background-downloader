@@ -98,7 +98,7 @@ public class Downloader {
         result.putInt("status", status);
         result.putInt("reason", reason);
         result.putString("reasonText", reasonText);
-        result.putDouble("bytesDownloaded", Long.parseLong(bytesDownloadedSoFar));
+        result.putDouble("bytes", Long.parseLong(bytesDownloadedSoFar));
         result.putDouble("bytesTotal", Long.parseLong(totalSizeBytes));
         result.putString("localUri", localUri);
 

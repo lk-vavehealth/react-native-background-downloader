@@ -10,12 +10,13 @@ function validateHandler (handler) {
     throw new TypeError(`[RNBackgroundDownloader] expected argument to be a function, got: ${type}`)
 }
 
-export default class DownloadTask {
+export default class SessionTask {
   id = ''
+  type = 0
   state = 'PENDING'
   metadata = {}
 
-  bytesDownloaded = 0
+  bytes = 0
   bytesTotal = 0
 
   beginHandler
@@ -25,7 +26,8 @@ export default class DownloadTask {
 
   constructor (taskInfo: TaskInfo, originalTask?: TaskInfo) {
     this.id = taskInfo.id
-    this.bytesDownloaded = taskInfo.bytesDownloaded ?? 0
+    this.type = taskInfo.type
+    this.bytes = taskInfo.bytes ?? 0
     this.bytesTotal = taskInfo.bytesTotal ?? 0
 
     const metadata = this.tryParseJson(taskInfo.metadata)
@@ -65,19 +67,19 @@ export default class DownloadTask {
   }
 
   onBegin (params) {
-    this.state = 'DOWNLOADING'
+    this.state = 'PROCESSING'
     this.beginHandler?.(params)
   }
 
-  onProgress ({ bytesDownloaded, bytesTotal }) {
-    this.bytesDownloaded = bytesDownloaded
+  onProgress ({ bytes, bytesTotal }) {
+    this.bytes = bytes
     this.bytesTotal = bytesTotal
-    this.progressHandler?.({ bytesDownloaded, bytesTotal })
+    this.progressHandler?.({ bytes, bytesTotal })
   }
 
   onDone (params) {
     this.state = 'DONE'
-    this.bytesDownloaded = params.bytesDownloaded
+    this.bytes = params.bytes
     this.bytesTotal = params.bytesTotal
     this.doneHandler?.(params)
   }
@@ -93,7 +95,7 @@ export default class DownloadTask {
   }
 
   resume () {
-    this.state = 'DOWNLOADING'
+    this.state = 'PROCESSING'
     RNBackgroundDownloader.resumeTask(this.id)
   }
 
@@ -109,7 +111,7 @@ export default class DownloadTask {
 
       return element
     } catch (e) {
-      console.warn('DownloadTask tryParseJson', e)
+      console.warn('SessionTask tryParseJson', e)
       return null
     }
   }

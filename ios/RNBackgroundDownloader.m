@@ -23,10 +23,11 @@ static CompletionHandler storedCompletionHandler;
     NSURLSessionConfiguration *sessionConfig;
     NSNumber *sharedLock;
     NSMutableDictionary<NSNumber *, RNBGDTaskConfig *> *taskToConfigMap;
-    NSMutableDictionary<NSString *, NSURLSessionDownloadTask *> *idToTaskMap;
+    NSMutableDictionary<NSString *, NSURLSessionTask *> *idToTaskMap;
     NSMutableDictionary<NSString *, NSData *> *idToResumeDataMap;
     NSMutableDictionary<NSString *, NSNumber *> *idToPercentMap;
-    NSMutableDictionary<NSString *, NSDictionary *> *progressReports;
+    NSMutableDictionary<NSString *, NSDictionary *> *downloadProgressReports;
+    NSMutableDictionary<NSString *, NSDictionary *> *uploadProgressReports;
     float progressInterval;
     NSDate *lastProgressReportedAt;
     BOOL isBridgeListenerInited;
@@ -49,7 +50,11 @@ RCT_EXPORT_MODULE();
         @"downloadBegin",
         @"downloadProgress",
         @"downloadComplete",
-        @"downloadFailed"
+        @"downloadFailed",
+        @"uploadBegin",
+        @"uploadProgress",
+        @"uploadComplete",
+        @"uploadFailed"
     ];
 }
 
@@ -96,7 +101,8 @@ RCT_EXPORT_MODULE();
         idToResumeDataMap = [[NSMutableDictionary alloc] init];
         idToPercentMap = [[NSMutableDictionary alloc] init];
 
-        progressReports = [[NSMutableDictionary alloc] init];
+        downloadProgressReports = [[NSMutableDictionary alloc] init];
+        uploadProgressReports = [[NSMutableDictionary alloc] init];
         float progressIntervalScope = [mmkv getFloatForKey:PROGRESS_INTERVAL_KEY];
         progressInterval = isnan(progressIntervalScope) ? 1.0 : progressIntervalScope;
         lastProgressReportedAt = [[NSDate alloc] init];
@@ -212,6 +218,60 @@ RCT_EXPORT_MODULE();
 }
 
 #pragma mark - JS exported methods
+
+RCT_EXPORT_METHOD(upload: (NSDictionary *)options) {
+    DLog(@"[RNBackgroundDownloader] - [upload]");
+
+    NSString *identifier = options[@"id"];
+    NSString *urlString = options[@"url"];
+    NSString *source = options[@"source"];
+    NSString *httpMethod = options[@"method"] ?: @"POST";
+    NSString *metadata = options[@"metadata"];
+    NSDictionary *headers = options[@"headers"];
+
+    if (!identifier || !urlString || !source) {
+        DLog(@"[RNBackgroundDownloader] - [Error] id, url, and source must be set for upload");
+        return;
+    }
+
+    NSURL *uploadURL = [NSURL URLWithString:urlString];
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:uploadURL];
+    request.HTTPMethod = httpMethod;
+
+    for (NSString *key in headers) {
+        [request setValue:headers[key] forHTTPHeaderField:key];
+    }
+
+    NSURL *fileURL = [NSURL fileURLWithPath:source];
+
+    RNBGDTaskConfig *taskConfig = [[RNBGDTaskConfig alloc] initWithDictionary:@{
+        @"id": identifier,
+        @"type": @(RNBGDTaskConfigTypeUpload),
+        @"url": urlString,
+        @"source": source,
+        @"httpMethod": httpMethod,
+        @"metadata": metadata ?: @"{}",
+        @"headers": headers ?: @{}
+    }];
+
+    @synchronized (sharedLock) {
+        [self lazyRegisterSession];
+
+        NSURLSessionUploadTask *uploadTask = [urlSession uploadTaskWithRequest:request fromFile:fileURL];
+        if (!uploadTask) {
+            DLog(@"[RNBackgroundDownloader] - [Error] failed to create upload task");
+            return;
+        }
+
+        taskToConfigMap[@(uploadTask.taskIdentifier)] = taskConfig;
+        [mmkv setData:[self serialize:taskToConfigMap] forKey:ID_TO_CONFIG_MAP_KEY];
+        idToTaskMap[identifier] = uploadTask;
+
+        [uploadTask resume];
+    }
+}
+
+
 RCT_EXPORT_METHOD(download: (NSDictionary *) options) {
     DLog(@"[RNBackgroundDownloader] - [download]");
     NSString *identifier = options[@"id"];
@@ -259,6 +319,7 @@ RCT_EXPORT_METHOD(download: (NSDictionary *) options) {
 
         RNBGDTaskConfig *taskConfig = [[RNBGDTaskConfig alloc] initWithDictionary: @{
             @"id": identifier,
+            @"type": @(RNBGDTaskConfigTypeDownload),
             @"url": url,
             @"destination": destination,
             @"metadata": metadata
@@ -278,7 +339,7 @@ RCT_EXPORT_METHOD(download: (NSDictionary *) options) {
 RCT_EXPORT_METHOD(pauseTask: (NSString *)identifier) {
     DLog(@"[RNBackgroundDownloader] - [pauseTask]");
     @synchronized (sharedLock) {
-        NSURLSessionDownloadTask *task = self->idToTaskMap[identifier];
+        NSURLSessionTask *task = self->idToTaskMap[identifier];
         if (task != nil && task.state == NSURLSessionTaskStateRunning) {
             [task suspend];
         }
@@ -288,7 +349,7 @@ RCT_EXPORT_METHOD(pauseTask: (NSString *)identifier) {
 RCT_EXPORT_METHOD(resumeTask: (NSString *)identifier) {
     DLog(@"[RNBackgroundDownloader] - [resumeTask]");
     @synchronized (sharedLock) {
-        NSURLSessionDownloadTask *task = self->idToTaskMap[identifier];
+        NSURLSessionTask *task = self->idToTaskMap[identifier];
         if (task != nil && task.state == NSURLSessionTaskStateSuspended) {
             [task resume];
         }
@@ -298,7 +359,7 @@ RCT_EXPORT_METHOD(resumeTask: (NSString *)identifier) {
 RCT_EXPORT_METHOD(stopTask: (NSString *)identifier) {
     DLog(@"[RNBackgroundDownloader] - [stopTask]");
     @synchronized (sharedLock) {
-        NSURLSessionDownloadTask *task = self->idToTaskMap[identifier];
+        NSURLSessionTask *task = self->idToTaskMap[identifier];
         if (task != nil) {
             [task cancel];
             [self removeTaskFromMap:task];
@@ -370,10 +431,68 @@ RCT_EXPORT_METHOD(checkForExistingDownloads: (RCTPromiseResolveBlock)resolve rej
 
                     [foundTasks addObject:@{
                         @"id": taskConfig.id,
+                        @"type": @(taskConfig.type),
                         @"metadata": taskConfig.metadata,
                         @"state": [NSNumber numberWithInt:(int)task.state],
-                        @"bytesDownloaded": [NSNumber numberWithLongLong:task.countOfBytesReceived],
+                        @"bytes": [NSNumber numberWithLongLong:task.countOfBytesReceived],
                         @"bytesTotal": [NSNumber numberWithLongLong:task.countOfBytesExpectedToReceive]
+                    }];
+                    taskConfig.reportedBegin = YES;
+                    self->taskToConfigMap[@(task.taskIdentifier)] = taskConfig;
+                    self->idToTaskMap[taskConfig.id] = task;
+                    self->idToPercentMap[taskConfig.id] = percent;
+                } else {
+                    [task cancel];
+                }
+            }
+            
+            for (NSURLSessionUploadTask *foundTask in uploadTasks) {
+                NSURLSessionUploadTask __strong *task = foundTask;
+
+                // The task.taskIdentifier may change after the Application is closed and opened.
+                // We cannot rely on this value to launch tasks.
+                // The download function adds an configId value to the headers.
+                // We query taskToConfigMap with this value.
+                NSDictionary *headers = task.currentRequest.allHTTPHeaderFields;
+                NSString *configId = headers[@"configId"];
+
+                NSNumber *taskIdentifier = @-1;
+                RNBGDTaskConfig *taskConfig = nil;
+                for (NSNumber *key in self->taskToConfigMap) {
+                    RNBGDTaskConfig *config = self->taskToConfigMap[key];
+                    if ([config.id isEqualToString:configId]) {
+                        taskIdentifier = key;
+                        taskConfig = config;
+                        break;
+                    }
+                }
+
+                if (taskConfig && [taskIdentifier intValue] != -1) {
+                    BOOL taskCompletedOrSuspended = (task.state == NSURLSessionTaskStateCompleted || task.state == NSURLSessionTaskStateSuspended);
+                    BOOL taskNeedBytes = task.countOfBytesSent < task.countOfBytesExpectedToSend;
+                    if (taskCompletedOrSuspended && taskNeedBytes) {
+                        NSData *taskResumeData = task.error.userInfo[NSURLSessionDownloadTaskResumeData];
+
+                        // The code -999 is used because the task was abandoned for some reason.
+                        if (task.error && task.error.code == -999 && taskResumeData != nil) {
+                            if (@available(iOS 17.0, *)) {
+                                task = [self->urlSession uploadTaskWithResumeData:taskResumeData];
+                            }
+                        }
+                        [task resume];
+                    }
+
+                    NSNumber *percent = task.countOfBytesExpectedToSend > 0
+                        ? [NSNumber numberWithFloat:(float)task.countOfBytesSent/(float)task.countOfBytesExpectedToSend]
+                        : @0.0;
+
+                    [foundTasks addObject:@{
+                        @"id": taskConfig.id,
+                        @"type": @(taskConfig.type),
+                        @"metadata": taskConfig.metadata,
+                        @"state": [NSNumber numberWithInt:(int)task.state],
+                        @"bytes": [NSNumber numberWithLongLong:task.countOfBytesSent],
+                        @"bytesTotal": [NSNumber numberWithLongLong:task.countOfBytesExpectedToSend]
                     }];
                     taskConfig.reportedBegin = YES;
                     self->taskToConfigMap[@(task.taskIdentifier)] = taskConfig;
@@ -408,7 +527,7 @@ RCT_EXPORT_METHOD(checkForExistingDownloads: (RCTPromiseResolveBlock)resolve rej
                         @"id": taskConfig.id,
                         @"headers": responseHeaders,
                         @"location": taskConfig.destination,
-                        @"bytesDownloaded": [NSNumber numberWithLongLong:downloadTask.countOfBytesReceived],
+                        @"bytes": [NSNumber numberWithLongLong:downloadTask.countOfBytesReceived],
                         @"bytesTotal": [NSNumber numberWithLongLong:downloadTask.countOfBytesExpectedToReceive]
                     }];
                 } else {
@@ -455,22 +574,64 @@ RCT_EXPORT_METHOD(checkForExistingDownloads: (RCTPromiseResolveBlock)resolve rej
             NSNumber *prevPercent = idToPercentMap[taskConfig.id];
             NSNumber *percent = [NSNumber numberWithFloat:(float)bytesTotalWritten/(float)bytesTotalExpectedToWrite];
             if ([percent floatValue] - [prevPercent floatValue] > 0.01f) {
-                progressReports[taskConfig.id] = @{
+                downloadProgressReports[taskConfig.id] = @{
                     @"id": taskConfig.id,
-                    @"bytesDownloaded": [NSNumber numberWithLongLong: bytesTotalWritten],
+                    @"bytes": [NSNumber numberWithLongLong: bytesTotalWritten],
                     @"bytesTotal": [NSNumber numberWithLongLong: bytesTotalExpectedToWrite]
                 };
                 idToPercentMap[taskConfig.id] = percent;
             }
 
             NSDate *now = [[NSDate alloc] init];
-            if ([now timeIntervalSinceDate:lastProgressReportedAt] > progressInterval && progressReports.count > 0) {
+            if ([now timeIntervalSinceDate:lastProgressReportedAt] > progressInterval && downloadProgressReports.count > 0) {
                 if (self.bridge && isJavascriptLoaded) {
-                    [self sendEventWithName:@"downloadProgress" body:[progressReports allValues]];
+                    [self sendEventWithName:@"downloadProgress" body:[downloadProgressReports allValues]];
                 }
                 lastProgressReportedAt = now;
-                [progressReports removeAllObjects];
+                [downloadProgressReports removeAllObjects];
             }
+        }
+    }
+}
+
+- (void)URLSession:(NSURLSession *)session
+ task:(NSURLSessionTask *)task
+ didSendBodyData:(int64_t)bytesSent
+ totalBytesSent:(int64_t)totalBytesSent
+ totalBytesExpectedToSend:(int64_t)totalBytesExpectedToSend
+{
+    DLog(@"[RNBackgroundDownloader] - [didSendData]");
+    @synchronized (sharedLock) {
+        RNBGDTaskConfig *taskConfig = taskToConfigMap[@(task.taskIdentifier)];
+        if (!taskConfig || !isJavascriptLoaded || !self.bridge) return;
+        
+        if (!taskConfig.reportedBegin) {
+            if (self.bridge && isJavascriptLoaded) {
+                [self sendEventWithName:@"uploadBegin" body:@{
+                    @"id": taskConfig.id,
+                    @"expectedBytes": [NSNumber numberWithLongLong: totalBytesExpectedToSend],
+                    @"headers": @[]
+                }];
+            }
+            taskConfig.reportedBegin = YES;
+        }
+        
+        NSNumber *prevPercent = idToPercentMap[taskConfig.id];
+        NSNumber *percent = [NSNumber numberWithFloat:(float)totalBytesSent / (float)totalBytesExpectedToSend];
+        
+        if ([percent floatValue] - [prevPercent floatValue] > 0.01f) {
+            uploadProgressReports[taskConfig.id] = @{
+                @"id": taskConfig.id,
+                @"bytes": [NSNumber numberWithLongLong: totalBytesSent],
+                @"bytesTotal": [NSNumber numberWithLongLong: totalBytesExpectedToSend]
+            };
+            idToPercentMap[taskConfig.id] = percent;
+        }
+        NSDate *now = [[NSDate alloc] init];
+        if ([now timeIntervalSinceDate:lastProgressReportedAt] > progressInterval && uploadProgressReports.count > 0) {
+            [self sendEventWithName:@"uploadProgress" body:[uploadProgressReports allValues]];
+            lastProgressReportedAt = now;
+            [uploadProgressReports removeAllObjects];
         }
     }
 }
@@ -478,20 +639,43 @@ RCT_EXPORT_METHOD(checkForExistingDownloads: (RCTPromiseResolveBlock)resolve rej
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error {
     DLog(@"[RNBackgroundDownloader] - [didCompleteWithError]");
     @synchronized (sharedLock) {
-        if (error == nil) {
-            return;
-        }
-
         RNBGDTaskConfig *taskConfig = taskToConfigMap[@(task.taskIdentifier)];
         if (taskConfig == nil) {
+            return;
+        }
+        
+        // Upload task has no dedicated method to finish upload
+        if (taskConfig.source != nil) {
+            DLog(@"[RNBackgroundDownloader] - [didFinishUploadingToURL]");
+            if (self.bridge && isJavascriptLoaded) {
+                if (error == nil) {
+                    [self sendEventWithName:@"uploadComplete" body:@{
+                        @"id": taskConfig.id,
+                        @"headers": @[],
+                        @"location": taskConfig.source,
+                        @"bytes": [NSNumber numberWithLongLong:task.countOfBytesSent],
+                        @"bytesTotal": [NSNumber numberWithLongLong:task.countOfBytesExpectedToSend]
+                    }];
+                } else {
+                    [self sendEventWithName:@"uploadFailed" body:@{
+                        @"id": taskConfig.id,
+                        @"error": [error localizedDescription],
+                        // TODO
+                        @"errorCode": @-1
+                    }];
+                }
+            }
+
+            [self removeTaskFromMap:task];
             return;
         }
 
         // -999 code represents incomplete tasks.
         // Required to continue resume tasks.
-        if (error.code != -999) {
+        if (error != nil && error.code != -999) {
             if (self.bridge && isJavascriptLoaded) {
-                [self sendEventWithName:@"downloadFailed" body:@{
+                NSString * eventName = @"downloadFailed";
+                [self sendEventWithName:eventName body:@{
                     @"id": taskConfig.id,
                     @"error": [error localizedDescription],
                     // TODO

@@ -27,7 +27,7 @@ test('begin event', () => {
     }).begin(({ expectedBytes, headers }) => {
       expect(expectedBytes).toBe(9001)
       expect(headers).toBe(mockedHeaders)
-      expect(beginDT.state).toBe('DOWNLOADING')
+      expect(beginDT.state).toBe('PROCESSING')
       resolve()
     })
     nativeEmitter.emit('downloadBegin', {
@@ -44,14 +44,14 @@ test('progress event', () => {
       id: 'testProgress',
       url: 'test',
       destination: 'test',
-    }).progress(({ bytesDownloaded, bytesTotal }) => {
-      expect(bytesDownloaded).toBe(100)
+    }).progress(({ bytes, bytesTotal }) => {
+      expect(bytes).toBe(100)
       expect(bytesTotal).toBe(200)
       resolve()
     })
     nativeEmitter.emit('downloadProgress', [{
       id: 'testProgress',
-      bytesDownloaded: 100,
+      bytes: 100,
       bytesTotal: 200,
     }])
   })
@@ -113,7 +113,7 @@ test('resume', () => {
   })
 
   resumeDT.resume()
-  expect(resumeDT.state).toBe('DOWNLOADING')
+  expect(resumeDT.state).toBe('PROCESSING')
   expect(RNBackgroundDownloaderNative.resumeTask).toHaveBeenCalled()
 })
 
