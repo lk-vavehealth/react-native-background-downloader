@@ -14,7 +14,6 @@
 static CompletionHandler storedCompletionHandler;
 
 @implementation RNBackgroundDownloader {
-    MMKV *mmkv;
     NSURLSession *urlSession;
     NSURLSessionConfiguration *sessionConfig;
     NSNumber *sharedLock;
@@ -28,6 +27,7 @@ static CompletionHandler storedCompletionHandler;
     NSDate *lastProgressReportedAt;
     BOOL isBridgeListenerInited;
     BOOL isJavascriptLoaded;
+    NSUserDefaults *userDefaults;
 }
 
 RCT_EXPORT_MODULE();
@@ -69,8 +69,7 @@ RCT_EXPORT_MODULE();
     DLog(@"[RNBackgroundDownloader] - [init]");
     self = [super init];
     if (self) {
-        [MMKV initializeMMKV:nil];
-        mmkv = [MMKV mmkvWithID:@"RNBackgroundDownloader"];
+        userDefaults = [[NSUserDefaults alloc] initWithSuiteName:@"RNBackgroundDownloader"];
 
         NSString *bundleIdentifier = [[NSBundle mainBundle] bundleIdentifier];
         NSString *sessionIdentifier = [bundleIdentifier stringByAppendingString:@".backgrounddownloadtask"];
@@ -89,7 +88,7 @@ RCT_EXPORT_MODULE();
 
         sharedLock = [NSNumber numberWithInt:1];
 
-        NSData *taskToConfigMapData = [mmkv getDataForKey:ID_TO_CONFIG_MAP_KEY];
+        NSData *taskToConfigMapData = [userDefaults dataForKey:ID_TO_CONFIG_MAP_KEY];
         NSMutableDictionary *taskToConfigMapDataDefault = [[NSMutableDictionary alloc] init];
         NSMutableDictionary *taskToConfigMapDataDecoded = taskToConfigMapData != nil ? [self deserialize:taskToConfigMapData] : nil;
         taskToConfigMap = taskToConfigMapDataDecoded != nil ? taskToConfigMapDataDecoded : taskToConfigMapDataDefault;
@@ -99,8 +98,8 @@ RCT_EXPORT_MODULE();
 
         downloadProgressReports = [[NSMutableDictionary alloc] init];
         uploadProgressReports = [[NSMutableDictionary alloc] init];
-        float progressIntervalScope = [mmkv getFloatForKey:PROGRESS_INTERVAL_KEY];
-        progressInterval = isnan(progressIntervalScope) ? 1.0 : progressIntervalScope;
+        float progressIntervalScope = [userDefaults floatForKey:PROGRESS_INTERVAL_KEY];
+        progressInterval = isnan(progressIntervalScope) ? 0.5 : progressIntervalScope;
         lastProgressReportedAt = [[NSDate alloc] init];
 
         [self registerBridgeListener];
@@ -204,7 +203,7 @@ RCT_EXPORT_MODULE();
         RNBGDTaskConfig *taskConfig = taskToConfigMap[taskId];
 
         [taskToConfigMap removeObjectForKey:taskId];
-        [mmkv setData:[self serialize: taskToConfigMap] forKey:ID_TO_CONFIG_MAP_KEY];
+        [userDefaults setObject:[self serialize: taskToConfigMap] forKey:ID_TO_CONFIG_MAP_KEY];
 
         if (taskConfig) {
             [self -> idToTaskMap removeObjectForKey:taskConfig.id];
@@ -260,7 +259,7 @@ RCT_EXPORT_METHOD(upload: (NSDictionary *)options) {
         }
 
         taskToConfigMap[@(uploadTask.taskIdentifier)] = taskConfig;
-        [mmkv setData:[self serialize:taskToConfigMap] forKey:ID_TO_CONFIG_MAP_KEY];
+        [userDefaults setObject:[self serialize:taskToConfigMap] forKey:ID_TO_CONFIG_MAP_KEY];
         idToTaskMap[identifier] = uploadTask;
 
         [uploadTask resume];
@@ -279,7 +278,7 @@ RCT_EXPORT_METHOD(download: (NSDictionary *) options) {
     NSNumber *progressIntervalScope = options[@"progressInterval"];
     if (progressIntervalScope) {
         progressInterval = [progressIntervalScope intValue] / 1000;
-        [mmkv setFloat:progressInterval forKey:PROGRESS_INTERVAL_KEY];
+        [userDefaults setFloat:progressInterval forKey:PROGRESS_INTERVAL_KEY];
     }
 
     NSString *destinationRelative = [self getRelativeFilePathFromPath:destination];
@@ -322,7 +321,7 @@ RCT_EXPORT_METHOD(download: (NSDictionary *) options) {
         }];
 
         taskToConfigMap[@(task.taskIdentifier)] = taskConfig;
-        [mmkv setData:[self serialize: taskToConfigMap] forKey:ID_TO_CONFIG_MAP_KEY];
+        [userDefaults setObject:[self serialize: taskToConfigMap] forKey:ID_TO_CONFIG_MAP_KEY];
 
         self->idToTaskMap[identifier] = task;
         idToPercentMap[identifier] = @0.0;
@@ -551,7 +550,7 @@ RCT_EXPORT_METHOD(checkForExistingDownloads: (RCTPromiseResolveBlock)resolve rej
     totalBytesWritten:(int64_t)bytesTotalWritten
     totalBytesExpectedToWrite:(int64_t)bytesTotalExpectedToWrite
 {
-    DLog(@"[RNBackgroundDownloader] - [didWriteData]");
+    // DLog(@"[RNBackgroundDownloader] - [didWriteData]");
     @synchronized (sharedLock) {
         RNBGDTaskConfig *taskConfig = taskToConfigMap[@(downloadTask.taskIdentifier)];
         if (taskConfig != nil) {
@@ -596,7 +595,7 @@ RCT_EXPORT_METHOD(checkForExistingDownloads: (RCTPromiseResolveBlock)resolve rej
  totalBytesSent:(int64_t)totalBytesSent
  totalBytesExpectedToSend:(int64_t)totalBytesExpectedToSend
 {
-    DLog(@"[RNBackgroundDownloader] - [didSendData]");
+    // DLog(@"[RNBackgroundDownloader] - [didSendData]");
     @synchronized (sharedLock) {
         RNBGDTaskConfig *taskConfig = taskToConfigMap[@(task.taskIdentifier)];
         if (!taskConfig || !isJavascriptLoaded || !self.bridge) return;

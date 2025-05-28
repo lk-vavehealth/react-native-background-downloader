@@ -1,11 +1,10 @@
 package com.eko;
 
+import android.content.SharedPreferences;
 import android.media.MediaScannerConnection;
 import android.util.Log;
 
-import com.eko.handlers.OnBegin;
 import com.eko.handlers.OnProgress;
-import com.eko.handlers.OnBeginState;
 import com.eko.handlers.OnProgressState;
 import com.eko.utils.FileUtils;
 
@@ -51,7 +50,6 @@ import androidx.work.Data;
 import androidx.work.OneTimeWorkRequest;
 import androidx.work.WorkManager;
 
-import com.tencent.mmkv.MMKV;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 
@@ -80,7 +78,6 @@ public class RNBackgroundDownloaderModule extends ReactContextBaseJavaModule {
   };
 
 
-  private static MMKV mmkv;
   private final Downloader downloader;
   private BroadcastReceiver downloadReceiver;
   private static final Object sharedLock = new Object();
@@ -92,13 +89,13 @@ public class RNBackgroundDownloaderModule extends ReactContextBaseJavaModule {
   private int progressInterval = 0;
   private Date lastProgressReportedAt = new Date();
   private static DeviceEventManagerModule.RCTDeviceEventEmitter staticEmitter;
+  private final SharedPreferences sharedPreferences;
+
 
 
   public RNBackgroundDownloaderModule(ReactApplicationContext reactContext) {
     super(reactContext);
-    MMKV.initialize(reactContext);
-
-    mmkv = MMKV.mmkvWithID(getName());
+    sharedPreferences = reactContext.getSharedPreferences("com.eko.RNBackgroundDownloaderModule", Context.MODE_PRIVATE);
 
     loadDownloadIdToConfigMap();
     loadConfigMap();
@@ -534,14 +531,14 @@ public class RNBackgroundDownloaderModule extends ReactContextBaseJavaModule {
     synchronized (sharedLock) {
       Gson gson = new Gson();
       String str = gson.toJson(downloadIdToConfig);
-      mmkv.encode(getName() + "_downloadIdToConfig", str);
+      sharedPreferences.edit().putString(getName() + "_downloadIdToConfig", str).apply();
     }
   }
 
   private void loadDownloadIdToConfigMap() {
     synchronized (sharedLock) {
       try {
-        String str = mmkv.decodeString(getName() + "_downloadIdToConfig");
+        String str = sharedPreferences.getString(getName() + "_downloadIdToConfig", null);
         if (str != null) {
           Gson gson = new Gson();
 
@@ -558,13 +555,13 @@ public class RNBackgroundDownloaderModule extends ReactContextBaseJavaModule {
 
   private void saveConfigMap() {
     synchronized (sharedLock) {
-      mmkv.encode(getName() + "_progressInterval", progressInterval);
+      sharedPreferences.edit().putInt(getName() + "_progressInterval", progressInterval).apply();
     }
   }
 
   private void loadConfigMap() {
     synchronized (sharedLock) {
-      int progressIntervalScope = mmkv.decodeInt(getName() + "_progressInterval");
+      int progressIntervalScope = sharedPreferences.getInt(getName() + "_progressInterval", 0);
       if (progressIntervalScope > 0) {
         progressInterval = progressIntervalScope;
       }
