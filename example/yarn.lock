@@ -1478,9 +1478,9 @@
     "@jridgewell/resolve-uri" "^3.1.0"
     "@jridgewell/sourcemap-codec" "^1.4.14"
 
-"@kesha-antonov/react-native-background-downloader@file:../kesha-antonov-react-native-background-downloader-3.2.10.tgz":
-  version "3.2.10"
-  resolved "file:../kesha-antonov-react-native-background-downloader-3.2.10.tgz#96701f408ee4d5cd2aeb7b869f42f261524e4f7a"
+"@kesha-antonov/react-native-background-downloader@file:../kesha-antonov-react-native-background-downloader-3.2.7.1402.tgz":
+  version "3.2.7"
+  resolved "file:../kesha-antonov-react-native-background-downloader-3.2.7.1402.tgz#3d0ae84d2bf39b24a45e7b368842a96322ec4ff4"
 
 "@nicolo-ribaudo/eslint-scope-5-internals@5.1.1-v1":
   version "5.1.1-v1"

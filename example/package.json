@@ -15,7 +15,7 @@
     "clean:delete": "rm -rf node_modules ios/Pods ios/build ~/Library/Developer/Xcode/DerivedData || true"
   },
   "dependencies": {
-    "@kesha-antonov/react-native-background-downloader": "file:../kesha-antonov-react-native-background-downloader-3.2.10.tgz",
+    "@kesha-antonov/react-native-background-downloader": "file:../kesha-antonov-react-native-background-downloader-3.2.7.1402.tgz",
     "@react-native-community/slider": "^4.5.0",
     "@react-navigation/native": "^6.1.16",
     "@react-navigation/stack": "^6.3.28",

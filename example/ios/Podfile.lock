@@ -889,7 +889,7 @@ PODS:
   - React-Mapbuffer (0.73.6):
     - glog
     - React-debug
-  - react-native-background-downloader (3.2.8):
+  - react-native-background-downloader (3.2.7):
     - glog
     - MMKV (~> 2.1.0)
     - RCT-Folly (= 2022.05.16.00)
@@ -1291,7 +1291,7 @@ SPEC CHECKSUMS:
   React-jsinspector: 85583ef014ce53d731a98c66a0e24496f7a83066
   React-logger: 55764cd993880c6f887505854581c9faf68feff2
   React-Mapbuffer: 15dfcfeb4428d8799cce75e7fe85b18b706029e0
-  react-native-background-downloader: a07223d3f4efa41bd24157d61e1ebbecccc7e1da
+  react-native-background-downloader: 161d58ece9f9870445c26c9c6b939bb767aeba16
   react-native-safe-area-context: 758e894ca5a9bd1868d2a9cfbca7326a2b6bf9dc
   react-native-slider: 6fc533efc19242ae8719e1002fd55a3f213f56ea
   React-nativeconfig: b4d4e9901d4cabb57be63053fd2aa6086eb3c85f

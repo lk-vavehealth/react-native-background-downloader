@@ -35,14 +35,6 @@
     "android/build.gradle",
     "android/src/"
   ],
-  "codegenConfig": {
-    "name": "RNBackgroundDownloaderSpec",
-    "type": "modules",
-    "jsSrcsDir": "./src",
-    "android": {
-      "javaPackageName": "com.eko"
-    }
-  },
   "scripts": {
     "bump": "npm version patch",
     "lint": "eslint .",
