@@ -26,7 +26,6 @@ static CompletionHandler storedCompletionHandler;
     float progressInterval;
     NSDate *lastProgressReportedAt;
     BOOL isBridgeListenerInited;
-    BOOL isJavascriptLoaded;
     NSUserDefaults *userDefaults;
 }
 
@@ -170,7 +169,6 @@ RCT_EXPORT_MODULE();
 
 - (void)handleBridgeJavascriptLoad:(NSNotification *) note {
     DLog(@"[RNBackgroundDownloader] - [handleBridgeJavascriptLoad]");
-    isJavascriptLoaded = YES;
 }
 
 - (void)handleBridgeAppEnterForeground:(NSNotification *) note {
@@ -513,26 +511,21 @@ RCT_EXPORT_METHOD(checkForExistingDownloads: (RCTPromiseResolveBlock)resolve rej
             NSError *error = [self getServerError:downloadTask];
             if (error == nil) {
                 [self saveFile:taskConfig downloadURL:location error:&error];
-            }
-
-            if (self.bridge && isJavascriptLoaded) {
-                if (error == nil) {
-                    NSDictionary *responseHeaders = ((NSHTTPURLResponse *)downloadTask.response).allHeaderFields;
-                    [self sendEventWithName:@"downloadComplete" body:@{
-                        @"id": taskConfig.id,
-                        @"headers": responseHeaders,
-                        @"location": taskConfig.destination,
-                        @"bytes": [NSNumber numberWithLongLong:downloadTask.countOfBytesReceived],
-                        @"bytesTotal": [NSNumber numberWithLongLong:downloadTask.countOfBytesExpectedToReceive]
-                    }];
-                } else {
-                    [self sendEventWithName:@"downloadFailed" body:@{
-                        @"id": taskConfig.id,
-                        @"error": [error localizedDescription],
-                        // TODO
-                        @"errorCode": @-1
-                    }];
-                }
+                NSDictionary *responseHeaders = ((NSHTTPURLResponse *)downloadTask.response).allHeaderFields;
+                [self sendEventWithName:@"downloadComplete" body:@{
+                    @"id": taskConfig.id,
+                    @"headers": responseHeaders,
+                    @"location": taskConfig.destination,
+                    @"bytes": [NSNumber numberWithLongLong:downloadTask.countOfBytesReceived],
+                    @"bytesTotal": [NSNumber numberWithLongLong:downloadTask.countOfBytesExpectedToReceive]
+                }];
+            } else {
+                [self sendEventWithName:@"downloadFailed" body:@{
+                    @"id": taskConfig.id,
+                    @"error": [error localizedDescription],
+                    // TODO
+                    @"errorCode": @-1
+                }];
             }
 
             [self removeTaskFromMap:downloadTask];
@@ -556,13 +549,11 @@ RCT_EXPORT_METHOD(checkForExistingDownloads: (RCTPromiseResolveBlock)resolve rej
         if (taskConfig != nil) {
             if (!taskConfig.reportedBegin) {
                 NSDictionary *responseHeaders = ((NSHTTPURLResponse *)downloadTask.response).allHeaderFields;
-                if (self.bridge && isJavascriptLoaded) {
-                    [self sendEventWithName:@"downloadBegin" body:@{
-                        @"id": taskConfig.id,
-                        @"expectedBytes": [NSNumber numberWithLongLong: bytesTotalExpectedToWrite],
-                        @"headers": responseHeaders
-                    }];
-                }
+                [self sendEventWithName:@"downloadBegin" body:@{
+                    @"id": taskConfig.id,
+                    @"expectedBytes": [NSNumber numberWithLongLong: bytesTotalExpectedToWrite],
+                    @"headers": responseHeaders
+                }];
                 taskConfig.reportedBegin = YES;
             }
 
@@ -579,9 +570,7 @@ RCT_EXPORT_METHOD(checkForExistingDownloads: (RCTPromiseResolveBlock)resolve rej
 
             NSDate *now = [[NSDate alloc] init];
             if ([now timeIntervalSinceDate:lastProgressReportedAt] > progressInterval && downloadProgressReports.count > 0) {
-                if (self.bridge && isJavascriptLoaded) {
-                    [self sendEventWithName:@"downloadProgress" body:[downloadProgressReports allValues]];
-                }
+                [self sendEventWithName:@"downloadProgress" body:[downloadProgressReports allValues]];
                 lastProgressReportedAt = now;
                 [downloadProgressReports removeAllObjects];
             }
@@ -598,16 +587,13 @@ RCT_EXPORT_METHOD(checkForExistingDownloads: (RCTPromiseResolveBlock)resolve rej
     // DLog(@"[RNBackgroundDownloader] - [didSendData]");
     @synchronized (sharedLock) {
         RNBGDTaskConfig *taskConfig = taskToConfigMap[@(task.taskIdentifier)];
-        if (!taskConfig || !isJavascriptLoaded || !self.bridge) return;
-        
+        if (!taskConfig) return;
         if (!taskConfig.reportedBegin) {
-            if (self.bridge && isJavascriptLoaded) {
-                [self sendEventWithName:@"uploadBegin" body:@{
-                    @"id": taskConfig.id,
-                    @"expectedBytes": [NSNumber numberWithLongLong: totalBytesExpectedToSend],
-                    @"headers": @[]
-                }];
-            }
+            [self sendEventWithName:@"uploadBegin" body:@{
+                @"id": taskConfig.id,
+                @"expectedBytes": [NSNumber numberWithLongLong: totalBytesExpectedToSend],
+                @"headers": @[]
+            }];
             taskConfig.reportedBegin = YES;
         }
         
@@ -642,23 +628,21 @@ RCT_EXPORT_METHOD(checkForExistingDownloads: (RCTPromiseResolveBlock)resolve rej
         // Upload task has no dedicated method to finish upload
         if (taskConfig.source != nil) {
             DLog(@"[RNBackgroundDownloader] - [didFinishUploadingToURL]");
-            if (self.bridge && isJavascriptLoaded) {
-                if (error == nil) {
-                    [self sendEventWithName:@"uploadComplete" body:@{
-                        @"id": taskConfig.id,
-                        @"headers": @[],
-                        @"location": taskConfig.source,
-                        @"bytes": [NSNumber numberWithLongLong:task.countOfBytesSent],
-                        @"bytesTotal": [NSNumber numberWithLongLong:task.countOfBytesExpectedToSend]
-                    }];
-                } else {
-                    [self sendEventWithName:@"uploadFailed" body:@{
-                        @"id": taskConfig.id,
-                        @"error": [error localizedDescription],
-                        // TODO
-                        @"errorCode": @-1
-                    }];
-                }
+            if (error == nil) {
+                [self sendEventWithName:@"uploadComplete" body:@{
+                    @"id": taskConfig.id,
+                    @"headers": @[],
+                    @"location": taskConfig.source,
+                    @"bytes": [NSNumber numberWithLongLong:task.countOfBytesSent],
+                    @"bytesTotal": [NSNumber numberWithLongLong:task.countOfBytesExpectedToSend]
+                }];
+            } else {
+                [self sendEventWithName:@"uploadFailed" body:@{
+                    @"id": taskConfig.id,
+                    @"error": [error localizedDescription],
+                    // TODO
+                    @"errorCode": @-1
+                }];
             }
 
             [self removeTaskFromMap:task];
@@ -668,15 +652,13 @@ RCT_EXPORT_METHOD(checkForExistingDownloads: (RCTPromiseResolveBlock)resolve rej
         // -999 code represents incomplete tasks.
         // Required to continue resume tasks.
         if (error != nil && error.code != -999) {
-            if (self.bridge && isJavascriptLoaded) {
-                NSString * eventName = @"downloadFailed";
-                [self sendEventWithName:eventName body:@{
-                    @"id": taskConfig.id,
-                    @"error": [error localizedDescription],
-                    // TODO
-                    @"errorCode": @-1
-                }];
-            }
+            NSString * eventName = @"downloadFailed";
+            [self sendEventWithName:eventName body:@{
+                @"id": taskConfig.id,
+                @"error": [error localizedDescription],
+                // TODO
+                @"errorCode": @-1
+            }];
             [self removeTaskFromMap:task];
         }
     }
